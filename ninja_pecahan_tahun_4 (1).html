@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ninja Pecahan: Aras Tahun 4</title>
+    
+    <!-- Google Fonts: Fredoka (Tajuk/Arked) & Nunito (Teks Mesra Murid) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google MediaPipe Hands CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        arcade: ['Fredoka', 'sans-serif'],
+                        body: ['Nunito', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #060913;
+            font-family: 'Nunito', sans-serif;
+            color: #ffffff;
+        }
+
+        /* Latar Belakang Webcam Cermin (Mirrored) */
+        #webcam-video {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            transform: scaleX(-1);
+            z-index: 1;
+            opacity: 0.42;
+            filter: contrast(1.1) saturate(1.15);
+        }
+
+        /* Lapisan Gelap Arked Neon */
+        #arcade-backdrop {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at 50% 45%, rgba(15, 23, 42, 0.35) 0%, rgba(5, 8, 20, 0.88) 100%);
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* Kanvas Utama: Jejak Pedang Cahaya, Buah/Kristal Pecahan, Belahan & Zarah */
+        #game-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 5;
+            touch-action: none;
+            cursor: crosshair;
+        }
+
+        /* Lapisan UI */
+        #ui-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .interactive-ui {
+            pointer-events: auto;
+        }
+
+        .arcade-glass {
+            background: rgba(13, 19, 38, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 2px solid rgba(56, 189, 248, 0.35);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        }
+
+        .arcade-btn {
+            font-family: 'Fredoka', sans-serif;
+            transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 6px 0 rgba(0, 0, 0, 0.4), 0 12px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        .arcade-btn:hover {
+            transform: translateY(-3px) scale(1.02);
+        }
+
+        .arcade-btn:active {
+            transform: translateY(3px) scale(0.98);
+            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 9999px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(34, 211, 238, 0.6);
+            border-radius: 9999px;
+        }
+
+        @keyframes dangerPulse {
+            0%, 100% { box-shadow: inset 0 0 0px rgba(244, 63, 94, 0); }
+            50% { box-shadow: inset 0 0 75px rgba(244, 63, 94, 0.6); }
+        }
+        .danger-vignette {
+            animation: dangerPulse 0.8s infinite;
+        }
+
+        @keyframes heartLost {
+            0% { transform: scale(1.4); filter: brightness(2); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+        .heart-pop {
+            animation: heartLost 0.35s ease-out;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Suapan Webcam Masa Nyata (Mirrored) -->
+    <video id="webcam-video" autoplay playsinline muted></video>
+    
+    <!-- Lapisan Kontras Arked Neon -->
+    <div id="arcade-backdrop"></div>
+
+    <!-- Kanvas Permainan & Bilah Pedang Cahaya -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Lapisan Antaramuka Pengguna (UI) -->
+    <div id="ui-layer">
+
+        <!-- BAR ATAS HUD -->
+        <header id="top-hud" class="w-full px-3 pt-3 sm:px-6 sm:pt-4 flex flex-col gap-2">
+            
+            <!-- Statistik Permainan (Skor, Nyawa 3 Hati, Kombo, Masa) -->
+            <div id="gameplay-stats" class="hidden w-full max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+                
+                <!-- Kiri: Skor & Kombo -->
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <div class="arcade-glass rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 flex items-center gap-2.5 border-amber-400/50">
+                        <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-slate-950 font-black text-lg shadow">
+                            ⚔️
+                        </div>
+                        <div>
+                            <div class="text-[10px] font-extrabold uppercase tracking-wider text-amber-300">Skor</div>
+                            <div id="hud-score" class="font-arcade text-xl sm:text-2xl font-bold leading-none text-white">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Kombo -->
+                    <div id="combo-badge" class="arcade-glass rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5 flex items-center gap-2 border-fuchsia-400/50 transition-transform duration-200">
+                        <span class="text-lg sm:text-xl">⚡</span>
+                        <div>
+                            <div class="text-[10px] font-extrabold uppercase tracking-wider text-fuchsia-300">Kombo</div>
+                            <div id="hud-combo" class="font-arcade text-lg sm:text-2xl font-bold leading-none text-fuchsia-400">x1</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tengah: Sistem Nyawa (3 Hati) & Pemasa 60s -->
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <!-- 3 Nyawa Hati -->
+                    <div class="arcade-glass rounded-2xl px-3.5 py-2 sm:px-4 sm:py-2.5 flex flex-col items-center border-rose-500/50">
+                        <div class="text-[10px] font-extrabold uppercase tracking-wider text-rose-300 mb-0.5">Nyawa</div>
+                        <div id="hud-hearts" class="flex items-center gap-1 text-lg sm:text-2xl leading-none">
+                            <span>❤️</span><span>❤️</span><span>❤️</span>
+                        </div>
+                    </div>
+
+                    <!-- Pemasa Undur 60 Saat -->
+                    <div class="arcade-glass rounded-2xl px-3.5 py-2 sm:px-5 sm:py-2.5 flex flex-col items-center min-w-[105px] sm:min-w-[140px] border-cyan-400/50">
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-sm sm:text-base">⏱️</span>
+                            <span id="hud-timer" class="font-arcade text-xl sm:text-2xl font-bold leading-none text-cyan-300">60s</span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-800 rounded-full mt-1.5 overflow-hidden border border-slate-700">
+                            <div id="timer-bar" class="h-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 transition-all duration-300" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Kanan: Status Bilah Pedang & Audio -->
+                <div class="flex items-center gap-2">
+                    <div class="hidden lg:flex arcade-glass rounded-2xl px-4 py-2.5 items-center gap-2.5 border-cyan-400/40">
+                        <span id="blade-dot" class="w-3 h-3 rounded-full bg-amber-400 animate-pulse"></span>
+                        <div>
+                            <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Bilah Pedang</div>
+                            <div id="blade-status-text" class="font-arcade text-sm font-semibold text-cyan-300">Sedia Melibas</div>
+                        </div>
+                    </div>
+
+                    <button id="btn-mute" onclick="toggleAudio()" title="Bisu / Nyahbisu Audio" class="interactive-ui arcade-glass hover:bg-slate-800/90 active:scale-95 w-11 h-11 rounded-2xl flex items-center justify-center text-xl border-slate-600/60 transition cursor-pointer">
+                        🔊
+                    </button>
+                </div>
+            </div>
+
+            <!-- KAD SOALAN PECAHAN & PERPULUHAN -->
+            <div id="question-banner" class="hidden w-full max-w-4xl mx-auto mt-1">
+                <div class="arcade-glass rounded-3xl px-4 py-3 sm:px-7 sm:py-4 border-2 border-cyan-400/60 shadow-2xl relative overflow-hidden">
+                    <div class="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-cyan-400 via-fuchsia-500 to-amber-400"></div>
+                    
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                        <span id="question-number-badge" class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs sm:text-sm font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-400/40">
+                            CABARAN 1
+                        </span>
+                        <span id="question-category-badge" class="inline-flex items-center px-3 py-0.5 rounded-full text-xs sm:text-sm font-bold bg-amber-500/20 text-amber-300 border border-amber-400/40">
+                            Pecahan Setara
+                        </span>
+                    </div>
+
+                    <div id="question-display" class="font-body text-lg sm:text-2xl md:text-[26px] font-black text-white leading-snug tracking-wide flex flex-wrap items-center gap-2">
+                        Memuatkan soalan matematik...
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- SKRIN UTAMA: MENU MULA & PANDUAN CARA BERMAIN -->
+        <main id="start-screen" class="interactive-ui flex-1 flex items-center justify-center p-4 overflow-y-auto">
+            <div class="arcade-glass w-full max-w-3xl rounded-3xl p-5 sm:p-8 border-2 border-cyan-400/50 shadow-2xl text-center relative my-auto">
+                
+                <button onclick="toggleAudio()" class="btn-mute-sync absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 w-11 h-11 rounded-2xl flex items-center justify-center text-xl border border-slate-600 transition cursor-pointer">
+                    🔊
+                </button>
+
+                <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-cyan-500/20 to-fuchsia-500/20 border border-cyan-400/50 text-cyan-300 font-extrabold text-xs sm:text-sm tracking-wider uppercase mb-3">
+                    <span>⚔️</span> MATEMATIK TAHUN 4 • PECAHAN & PERPULUHAN
+                </div>
+
+                <h1 class="font-arcade text-4xl sm:text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-white to-fuchsia-300 drop-shadow-sm mb-2">
+                    NINJA PECAHAN
+                </h1>
+                <p class="text-slate-300 text-sm sm:text-base md:text-lg font-semibold max-w-xl mx-auto mb-5">
+                    Libaskan jari telunjuk anda sebagai <strong>pedang cahaya</strong> untuk membelah buah & kristal yang membawa nilai pecahan atau perpuluhan yang betul!
+                </p>
+
+                <!-- Panduan Cara Bermain (3 Kad) -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 text-left">
+                    
+                    <!-- Langkah 1 -->
+                    <div class="bg-slate-900/80 border border-cyan-500/35 rounded-2xl p-3.5 flex flex-col items-center text-center">
+                        <div class="w-14 h-14 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center mb-2">
+                            <!-- SVG Jari Pedang Cahaya -->
+                            <svg class="w-9 h-9 text-cyan-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 2v11"/>
+                                <path d="M5 9l14-4" stroke="#f0abfc" stroke-width="2.5"/>
+                                <path d="M9 13v-2a1.5 1.5 0 0 1 3 0v2"/>
+                                <path d="M12 12v-1.5a1.5 1.5 0 0 1 3 0V13"/>
+                                <path d="M15 13v-1a1.5 1.5 0 0 1 3 0v4a6 6 0 0 1-6 6h-2a6 6 0 0 1-5-2.7L3 16a1.5 1.5 0 0 1 2.3-1.9L7 15.5"/>
+                            </svg>
+                        </div>
+                        <div class="font-arcade text-base text-cyan-300 font-bold">1. LIBAS (SWIPE)</div>
+                        <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                            Gerakkan <strong>hujung jari telunjuk</strong> dengan pantas melintasi objek sasaran untuk menghirisnya!
+                        </p>
+                    </div>
+
+                    <!-- Langkah 2 -->
+                    <div class="bg-slate-900/80 border border-emerald-500/35 rounded-2xl p-3.5 flex flex-col items-center text-center">
+                        <div class="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center mb-2 text-2xl">
+                            🍉💎
+                        </div>
+                        <div class="font-arcade text-base text-emerald-300 font-bold">2. NILAI SETARA</div>
+                        <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                            Cari <strong>pecahan setara, pecahan tak wajar, nombor bercampur</strong> atau <strong>perpuluhan</strong> yang tepat.
+                        </p>
+                    </div>
+
+                    <!-- Langkah 3 -->
+                    <div class="bg-slate-900/80 border border-rose-500/35 rounded-2xl p-3.5 flex flex-col items-center text-center">
+                        <div class="w-14 h-14 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center mb-2 text-2xl">
+                            ❤️❤️❤️
+                        </div>
+                        <div class="font-arcade text-base text-rose-300 font-bold">3. JAGA NYAWA</div>
+                        <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                            Anda ada <strong>3 hati</strong> dan masa <strong>60 saat</strong>. Menghiris jawapan salah akan menolak 1 nyawa!
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Status Kamera & Ujian Libasan -->
+                <div class="bg-slate-950/75 border border-slate-700/80 rounded-2xl px-4 py-3 mb-6 flex flex-col sm:flex-row items-center justify-between gap-2">
+                    <div class="flex items-center gap-2.5">
+                        <span id="cam-status-indicator" class="w-3.5 h-3.5 rounded-full bg-amber-400 animate-ping"></span>
+                        <span id="cam-status-message" class="text-xs sm:text-sm font-bold text-slate-200">
+                            Menghidupkan kamera & penjejak bilah jari AI...
+                        </span>
+                    </div>
+                    <span class="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-800 text-cyan-300 border border-slate-700">
+                        Tip: Seret tetikus / jari di skrin juga disokong
+                    </span>
+                </div>
+
+                <button id="btn-start-game" onclick="startGame()" class="arcade-btn w-full sm:w-auto px-10 py-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-sky-400 to-fuchsia-500 text-slate-950 font-arcade text-2xl sm:text-3xl font-bold tracking-wide cursor-pointer">
+                    ⚔️ MULA MENEBAS (60s)
+                </button>
+            </div>
+        </main>
+
+        <!-- SKRIN KEPUTUSAN & SEMAKAN JALAN KERJA -->
+        <section id="result-screen" class="hidden interactive-ui flex-1 flex items-center justify-center p-3 sm:p-5 overflow-hidden">
+            <div class="arcade-glass w-full max-w-4xl max-h-[92vh] rounded-3xl p-5 sm:p-7 border-2 border-cyan-400/60 shadow-2xl flex flex-col">
+                
+                <!-- Ringkasan Keputusan -->
+                <div class="text-center pb-4 border-b border-slate-700/80">
+                    <div id="rank-badge" class="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-amber-500/20 border border-amber-400 text-amber-300 font-arcade text-sm sm:text-base uppercase tracking-wider mb-1">
+                        🥷 PANGKAT: MASTER NINJA PECAHAN
+                    </div>
+                    <h2 id="end-reason-title" class="font-arcade text-3xl sm:text-4xl font-bold text-white">
+                        MISI TAMAT!
+                    </h2>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4 mt-4">
+                        <div class="bg-slate-900/85 border border-amber-400/40 rounded-2xl p-2.5 sm:p-3">
+                            <div class="text-[11px] font-extrabold text-amber-300 uppercase">Jumlah Skor</div>
+                            <div id="res-score" class="font-arcade text-2xl sm:text-3xl font-bold text-white">0</div>
+                        </div>
+                        <div class="bg-slate-900/85 border border-emerald-400/40 rounded-2xl p-2.5 sm:p-3">
+                            <div class="text-[11px] font-extrabold text-emerald-300 uppercase">Hirisan Tepat</div>
+                            <div id="res-correct" class="font-arcade text-2xl sm:text-3xl font-bold text-emerald-400">0 / 0</div>
+                        </div>
+                        <div class="bg-slate-900/85 border border-cyan-400/40 rounded-2xl p-2.5 sm:p-3">
+                            <div class="text-[11px] font-extrabold text-cyan-300 uppercase">Ketepatan</div>
+                            <div id="res-accuracy" class="font-arcade text-2xl sm:text-3xl font-bold text-cyan-300">0%</div>
+                        </div>
+                        <div class="bg-slate-900/85 border border-fuchsia-400/40 rounded-2xl p-2.5 sm:p-3">
+                            <div class="text-[11px] font-extrabold text-fuchsia-300 uppercase">Kombo Maksimum</div>
+                            <div id="res-max-combo" class="font-arcade text-2xl sm:text-3xl font-bold text-fuchsia-400">x1</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Semakan Jalan Kerja -->
+                <div class="flex-1 overflow-y-auto custom-scrollbar my-4 pr-1">
+                    <h3 class="font-arcade text-lg text-cyan-300 mb-2.5 flex items-center gap-2">
+                        <span>📐</span> Semakan Jawapan & Jalan Kerja Matematik
+                    </h3>
+                    <div id="review-list" class="space-y-2.5"></div>
+                </div>
+
+                <!-- Butang Tindakan -->
+                <div class="pt-3 border-t border-slate-700/80 flex flex-col sm:flex-row items-center justify-center gap-3">
+                    <button onclick="startGame()" class="arcade-btn w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-400 to-fuchsia-500 text-slate-950 font-arcade text-xl sm:text-2xl font-bold cursor-pointer">
+                        ⚔️ MAIN SEMULA
+                    </button>
+                    <button onclick="returnToMenu()" class="arcade-btn w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-arcade text-lg sm:text-xl font-semibold cursor-pointer">
+                        🏠 MENU UTAMA
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- PANDUAN RINGKAS BAWAH -->
+        <footer id="bottom-hint" class="hidden w-full pb-2.5 px-4 text-center">
+            <div class="inline-flex items-center gap-3 px-4 py-1.5 rounded-full bg-slate-950/80 border border-slate-700/80 text-xs sm:text-sm font-bold text-slate-300">
+                <span class="text-cyan-300">⚔️ Libaskan jari telunjuk dengan pantas melintasi buah/kristal jawapan betul!</span>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * 1. PENJANA SOALAN DINAMIK: PECAHAN WAJAR, TAK WAJAR & PERPULUHAN (TAHUN 4)
+         * ============================================================================
+         */
+        const STATIC_QUESTION_BANK = [
+            {
+                category: "Pecahan Setara",
+                prompt: "Libas pecahan yang SETARA dengan 1/2 :",
+                options: ["4/8", "2/5", "3/8", "1/4"],
+                answer: "4/8",
+                working: "1/2 × 4/4 = 4/8 (Darab pengangka dan penyebut dengan nombor yang sama iaitu 4)."
+            },
+            {
+                category: "Pecahan Setara",
+                prompt: "Libas pecahan yang SETARA dengan 2/3 :",
+                options: ["6/9", "4/9", "3/6", "5/6"],
+                answer: "6/9",
+                working: "2/3 × 3/3 = 6/9."
+            },
+            {
+                category: "Pecahan Setara",
+                prompt: "Libas pecahan yang SETARA dengan 3/4 :",
+                options: ["6/8", "4/6", "3/8", "5/8"],
+                answer: "6/8",
+                working: "3/4 × 2/2 = 6/8."
+            },
+            {
+                category: "Pecahan Termudah",
+                prompt: "Permudahkan 6/10 kepada bentuk termudah:",
+                options: ["3/5", "2/5", "3/10", "1/2"],
+                answer: "3/5",
+                working: "Bahagi pengangka dan penyebut dengan 2: (6 ÷ 2) / (10 ÷ 2) = 3/5."
+            },
+            {
+                category: "Pecahan Termudah",
+                prompt: "Permudahkan 4/12 kepada bentuk termudah:",
+                options: ["1/3", "2/3", "1/4", "2/6"],
+                answer: "1/3",
+                working: "Bahagi pengangka dan penyebut dengan 4: (4 ÷ 4) / (12 ÷ 4) = 1/3."
+            },
+            {
+                category: "Pecahan Tak Wajar → Nombor Bercampur",
+                prompt: "Tukarkan pecahan tak wajar 7/4 kepada nombor bercampur:",
+                options: ["1 3/4", "1 1/4", "2 1/4", "1 2/4"],
+                answer: "1 3/4",
+                working: "7 ÷ 4 = 1 baki 3. Jadi, 7/4 = 1 3/4."
+            },
+            {
+                category: "Pecahan Tak Wajar → Nombor Bercampur",
+                prompt: "Tukarkan pecahan tak wajar 11/5 kepada nombor bercampur:",
+                options: ["2 1/5", "1 4/5", "2 2/5", "3 1/5"],
+                answer: "2 1/5",
+                working: "11 ÷ 5 = 2 baki 1. Maka, 11/5 = 2 1/5."
+            },
+            {
+                category: "Nombor Bercampur → Pecahan Tak Wajar",
+                prompt: "Tukarkan 2 1/3 kepada pecahan tak wajar:",
+                options: ["7/3", "5/3", "6/3", "8/3"],
+                answer: "7/3",
+                working: "(2 × 3 + 1) / 3 = (6 + 1) / 3 = 7/3."
+            },
+            {
+                category: "Nombor Bercampur → Pecahan Tak Wajar",
+                prompt: "Tukarkan 1 5/6 kepada pecahan tak wajar:",
+                options: ["11/6", "6/6", "9/6", "12/6"],
+                answer: "11/6",
+                working: "(1 × 6 + 5) / 6 = (6 + 5) / 6 = 11/6."
+            },
+            {
+                category: "Pecahan Perseratus ↔ Perpuluhan",
+                prompt: "Tukarkan 7/10 kepada nombor perpuluhan:",
+                options: ["0.7", "0.07", "7.0", "0.17"],
+                answer: "0.7",
+                working: "7 persepuluh bersamaan dengan 0.7."
+            },
+            {
+                category: "Pecahan Perseratus ↔ Perpuluhan",
+                prompt: "Tukarkan 25/100 kepada nombor perpuluhan:",
+                options: ["0.25", "2.5", "0.025", "0.52"],
+                answer: "0.25",
+                working: "25 perseratus = 0.25 (dua tempat perpuluhan)."
+            },
+            {
+                category: "Pecahan Perseratus ↔ Perpuluhan",
+                prompt: "Tukarkan 9/100 kepada nombor perpuluhan:",
+                options: ["0.09", "0.9", "0.90", "9.0"],
+                answer: "0.09",
+                working: "9 perseratus mempunyai sifar di tempat persepuluh: 0.09."
+            },
+            {
+                category: "Perpuluhan ↔ Pecahan",
+                prompt: "Libas pecahan yang bernilai sama dengan 0.5 :",
+                options: ["1/2", "1/5", "5/100", "2/5"],
+                answer: "1/2",
+                working: "0.5 = 5/10. Permudahkan (5 ÷ 5)/(10 ÷ 5) = 1/2."
+            },
+            {
+                category: "Perpuluhan ↔ Pecahan",
+                prompt: "Libas pecahan yang bernilai sama dengan 0.75 :",
+                options: ["3/4", "1/4", "7/5", "3/5"],
+                answer: "3/4",
+                working: "0.75 = 75/100. Bahagi pengangka & penyebut dengan 25 = 3/4."
+            },
+            {
+                category: "Perpuluhan ↔ Pecahan",
+                prompt: "Libas nilai perpuluhan bagi pecahan 1/4 :",
+                options: ["0.25", "0.4", "0.14", "0.5"],
+                answer: "0.25",
+                working: "1/4 × 25/25 = 25/100 = 0.25."
+            },
+            {
+                category: "Kenal Pasti Jenis Pecahan",
+                prompt: "Libas objek yang memaparkan PECAHAN TAK WAJAR:",
+                options: ["9/5", "3/7", "4/9", "1/2"],
+                answer: "9/5",
+                working: "Pecahan tak wajar mempunyai pengangka (9) lebih besar daripada penyebut (5)."
+            },
+            {
+                category: "Kenal Pasti Jenis Pecahan",
+                prompt: "Libas objek yang memaparkan PECAHAN WAJAR:",
+                options: ["5/8", "8/5", "7/7", "11/4"],
+                answer: "5/8",
+                working: "Pecahan wajar mempunyai pengangka (5) lebih kecil daripada penyebut (8)."
+            },
+            {
+                category: "Operasi Asas Pecahan Tahun 4",
+                prompt: "Hitung nilai bagi 2/7 + 3/7 :",
+                options: ["5/7", "5/14", "6/7", "1/7"],
+                answer: "5/7",
+                working: "Penyebut sama (7): Tambah pengangka sahaja → (2 + 3)/7 = 5/7."
+            },
+            {
+                category: "Operasi Asas Pecahan Tahun 4",
+                prompt: "Hitung nilai bagi 7/9 - 2/9 :",
+                options: ["5/9", "9/9", "5/18", "4/9"],
+                answer: "5/9",
+                working: "Penyebut sama (9): Tolak pengangka sahaja → (7 - 2)/9 = 5/9."
+            },
+            {
+                category: "Operasi Asas Pecahan Tahun 4",
+                prompt: "Hitung nilai bagi 1/2 + 1/4 :",
+                options: ["3/4", "2/6", "2/4", "1/6"],
+                answer: "3/4",
+                working: "Samakan penyebut: 1/2 = 2/4. Maka, 2/4 + 1/4 = 3/4."
+            }
+        ];
+
+        // Penjana tambahan soalan dinamik secara rawak supaya setiap sesi segar
+        function generateDynamicQuestion() {
+            const type = Math.floor(Math.random() * 4);
+
+            if (type === 0) {
+                // Pecahan Setara Dinamik
+                const basePairs = [[1, 2], [1, 3], [2, 3], [1, 4], [3, 4], [2, 5], [3, 5], [4, 5]];
+                const [num, den] = basePairs[Math.floor(Math.random() * basePairs.length)];
+                const mult = [2, 3, 4][Math.floor(Math.random() * 3)];
+                const ans = `${num * mult}/${den * mult}`;
+                const distractors = new Set();
+                while (distractors.size < 3) {
+                    const dNum = Math.max(1, num * mult + (Math.floor(Math.random() * 5) - 2));
+                    const dDen = Math.max(dNum + 1, den * mult + (Math.floor(Math.random() * 5) - 2));
+                    const cand = `${dNum}/${dDen}`;
+                    if (cand !== ans && dNum / dDen !== num / den) {
+                        distractors.add(cand);
+                    }
+                }
+                return {
+                    category: "Pecahan Setara (Dinamik)",
+                    prompt: `Libas pecahan yang SETARA dengan ${num}/${den} :`,
+                    options: [ans, ...distractors],
+                    answer: ans,
+                    working: `${num}/${den} × ${mult}/${mult} = ${ans}.`
+                };
+            } else if (type === 1) {
+                // Pecahan Tak Wajar ke Nombor Bercampur
+                const whole = [1, 2, 3][Math.floor(Math.random() * 3)];
+                const den = [3, 4, 5, 6][Math.floor(Math.random() * 4)];
+                const rem = 1 + Math.floor(Math.random() * (den - 1));
+                const impNum = whole * den + rem;
+                const ans = `${whole} ${rem}/${den}`;
+                const distractors = new Set();
+                while (distractors.size < 3) {
+                    const w = Math.max(1, whole + (Math.floor(Math.random() * 3) - 1));
+                    const r = 1 + Math.floor(Math.random() * (den - 1));
+                    const cand = `${w} ${r}/${den}`;
+                    if (cand !== ans) distractors.add(cand);
+                }
+                return {
+                    category: "Pecahan Tak Wajar (Dinamik)",
+                    prompt: `Tukarkan ${impNum}/${den} kepada nombor bercampur:`,
+                    options: [ans, ...distractors],
+                    answer: ans,
+                    working: `${impNum} ÷ ${den} = ${whole} baki ${rem}, maka jawapannya ialah ${ans}.`
+                };
+            } else if (type === 2) {
+                // Perpuluhan Perseratus
+                const hundredths = 11 + Math.floor(Math.random() * 88);
+                if (hundredths % 10 === 0) {
+                    const tenths = hundredths / 10;
+                    const ans = `0.${tenths}`;
+                    return {
+                        category: "Pecahan & Perpuluhan (Dinamik)",
+                        prompt: `Tukarkan ${tenths}/10 kepada nombor perpuluhan:`,
+                        options: [ans, `0.0${tenths}`, `${tenths}.0`, `0.${tenths}5`],
+                        answer: ans,
+                        working: `${tenths} persepuluh = ${ans}.`
+                    };
+                }
+                const ans = `0.${hundredths}`;
+                const rev = hundredths.toString().split('').reverse().join('');
+                const d1 = `0.${rev === hundredths.toString() ? hundredths - 5 : rev}`;
+                const d2 = `${(hundredths / 10).toFixed(1)}`;
+                const d3 = `0.0${Math.floor(hundredths / 10)}`;
+                return {
+                    category: "Pecahan & Perpuluhan (Dinamik)",
+                    prompt: `Tukarkan ${hundredths}/100 kepada nombor perpuluhan:`,
+                    options: [ans, d1, d2, d3],
+                    answer: ans,
+                    working: `${hundredths} perseratus = ${ans}.`
+                };
+            } else {
+                // Tambah Pecahan Penyebut Sama
+                const den = [5, 7, 8, 9, 10][Math.floor(Math.random() * 5)];
+                const a = 1 + Math.floor(Math.random() * Math.floor(den / 2));
+                const b = 1 + Math.floor(Math.random() * (den - a - 1));
+                const ans = `${a + b}/${den}`;
+                return {
+                    category: "Operasi Pecahan (Dinamik)",
+                    prompt: `Hitung hasil tambah ${a}/${den} + ${b}/${den} :`,
+                    options: [ans, `${a + b}/${den * 2}`, `${Math.max(1, a + b - 1)}/${den}`, `${a + b + 1}/${den}`],
+                    answer: ans,
+                    working: `Penyebut sama (${den}): (${a} + ${b})/${den} = ${ans}.`
+                };
+            }
+        }
+
+        function buildSessionQuestions() {
+            const mixed = [...STATIC_QUESTION_BANK];
+            for (let i = 0; i < 10; i++) {
+                mixed.push(generateDynamicQuestion());
+            }
+            return shuffleArray(mixed);
+        }
+
+        /**
+         * ============================================================================
+         * 2. ENJIN AUDIO PEDANG CAHAYA & KESAN BUNYI (WEB AUDIO API)
+         * ============================================================================
+         */
+        class NinjaSoundFX {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+                this.lastSwipeSoundTime = 0;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            // Bunyi libasan pedang cahaya (Laser/Katana Whoosh)
+            playSwordSwipe() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                if (now - this.lastSwipeSoundTime < 0.22) return;
+                this.lastSwipeSoundTime = now;
+
+                // White noise bandpass untuk bunyi angin libasan + oscillator cahaya
+                const bufferSize = this.ctx.sampleRate * 0.16;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(600, now);
+                filter.frequency.exponentialRampToValueAtTime(2400, now + 0.08);
+                filter.frequency.exponentialRampToValueAtTime(400, now + 0.16);
+                filter.Q.value = 2.5;
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.28, now + 0.04);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                noise.start(now);
+                noise.stop(now + 0.17);
+            }
+
+            // Bunyi belahan kristal / buah + nada kemenangan
+            playSliceCorrect(combo = 1) {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const boost = Math.min(combo - 1, 7) * 40;
+                const freqs = [587.33 + boost, 880 + boost, 1174.66 + boost];
+
+                freqs.forEach((f, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = idx === 0 ? 'sawtooth' : 'triangle';
+                    osc.frequency.setValueAtTime(f, now + idx * 0.045);
+
+                    gain.gain.setValueAtTime(0.22, now + idx * 0.045);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.045 + 0.28);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now + idx * 0.045);
+                    osc.stop(now + idx * 0.045 + 0.29);
+                });
+            }
+
+            // Bunyi hiris salah (Amaran nyawa berkurang)
+            playSliceWrong() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(190, now);
+                osc.frequency.linearRampToValueAtTime(95, now + 0.32);
+
+                gain.gain.setValueAtTime(0.28, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + 0.35);
+            }
+
+            playTick(urgent = false) {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(urgent ? 920 : 680, now);
+                gain.gain.setValueAtTime(0.14, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.08);
+            }
+
+            playGameOver() {
+                if (this.muted) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((f, i) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(f, now + i * 0.11);
+                    gain.gain.setValueAtTime(0.24, now + i * 0.11);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.11 + 0.35);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + i * 0.11);
+                    osc.stop(now + i * 0.11 + 0.36);
+                });
+            }
+        }
+
+        const sfx = new NinjaSoundFX();
+
+        function toggleAudio() {
+            sfx.muted = !sfx.muted;
+            const icon = sfx.muted ? '🔇' : '🔊';
+            document.getElementById('btn-mute').textContent = icon;
+            document.querySelectorAll('.btn-mute-sync').forEach(btn => btn.textContent = icon);
+            if (!sfx.muted) sfx.playSwordSwipe();
+        }
+
+        /**
+         * ============================================================================
+         * 3. KEADAAN KANVAS, BILAH PEDANG CAHAYA & OBJEK BUAH/KRISTAL
+         * ============================================================================
+         */
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const videoElement = document.getElementById('webcam-video');
+
+        let canvasWidth = window.innerWidth;
+        let canvasHeight = window.innerHeight;
+
+        function resizeCanvas() {
+            canvasWidth = window.innerWidth;
+            canvasHeight = window.innerHeight;
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Tema Visual Buah & Kristal Neon Arked
+        const TARGET_STYLES = [
+            { kind: 'crystal', fill: '#06b6d4', light: '#a5f3fc', dark: '#0e7490', glow: 'rgba(6, 182, 212, 0.65)' },   // Kristal Sian
+            { kind: 'fruit',   fill: '#f43f5e', light: '#fda4af', dark: '#9f1239', glow: 'rgba(244, 63, 94, 0.65)' },   // Tembikai Merah Neon
+            { kind: 'crystal', fill: '#d946ef', light: '#f5d0fe', dark: '#86198f', glow: 'rgba(217, 70, 239, 0.65)' },  // Kristal Amethyst
+            { kind: 'fruit',   fill: '#f59e0b', light: '#fde68a', dark: '#b45309', glow: 'rgba(245, 158, 11, 0.65)' }   // Oren Emas
+        ];
+
+        const gameState = {
+            mode: 'MENU', // 'MENU', 'PLAYING', 'RESULT'
+            score: 0,
+            lives: 3,
+            combo: 1,
+            maxCombo: 1,
+            timeLeft: 60,
+            timerInterval: null,
+            questionPool: [],
+            currentQuestionIndex: 0,
+            currentQuestion: null,
+            questionLocked: false,
+            history: [],
+            targets: [],       // Buah / kristal terapung aktif
+            slicedHalves: [],  // Serpihan belahan dua yang jatuh selepas dihiris
+            slashLines: [],    // Garisan tebasan bercahaya pada objek terbelah
+            particles: [],
+            floatingTexts: [],
+            screenShake: 0
+        };
+
+        // Keadaan Bilah Pedang Jari Telunjuk & Jejak Cahaya (Trail)
+        const bladeState = {
+            detected: false,
+            landmarks: null,
+            rawX: canvasWidth / 2,
+            rawY: canvasHeight / 2,
+            x: canvasWidth / 2,
+            y: canvasHeight / 2,
+            prevX: canvasWidth / 2,
+            prevY: canvasHeight / 2,
+            speed: 0,
+            isSlashing: false,
+            trail: [], // Simpan titik koordinat terkini untuk jejak pedang cahaya
+            pointerDown: false
+        };
+
+        // Ambang kelajuan libasan (piksel per bingkai) supaya gerakan sengaja dikira menghiris
+        const SLASH_SPEED_THRESHOLD = 14;
+
+        /**
+         * ============================================================================
+         * 4. GOOGLE MEDIAPIPE HANDS (PENJEJAK HUJUNG JARI TELUNJUK - LANDMARK 8)
+         * ============================================================================
+         */
+        let mpHands = null;
+        let cameraRunning = false;
+
+        async function initMediaPipeHands() {
+            const statusText = document.getElementById('cam-status-message');
+            const statusDot = document.getElementById('cam-status-indicator');
+
+            try {
+                if (typeof Hands === 'undefined') {
+                    throw new Error("MediaPipe Hands gagal dimuatkan.");
+                }
+
+                mpHands = new Hands({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+                });
+
+                mpHands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.65,
+                    minTrackingConfidence: 0.65
+                });
+
+                mpHands.onResults(onHandResults);
+
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'user'
+                    },
+                    audio: false
+                });
+
+                videoElement.srcObject = stream;
+                await videoElement.play();
+                cameraRunning = true;
+
+                statusDot.classList.remove('bg-amber-400', 'animate-ping');
+                statusDot.classList.add('bg-emerald-400');
+                statusText.textContent = "Kamera Aktif! Gerakkan jari telunjuk untuk melihat bilah pedang cahaya.";
+                statusText.classList.add('text-emerald-300');
+
+                processVideoFrame();
+            } catch (err) {
+                console.warn("Kamera tidak dikesan, menggunakan kawalan tetikus/sentuhan:", err);
+                statusDot.classList.remove('bg-amber-400', 'animate-ping');
+                statusDot.classList.add('bg-cyan-400');
+                statusText.textContent = "Mod Tetikus / Skrin Sentuh Aktif (Seret untuk melibas).";
+                statusText.classList.add('text-cyan-300');
+            }
+        }
+
+        async function processVideoFrame() {
+            if (cameraRunning && videoElement.readyState >= 2 && mpHands) {
+                try {
+                    await mpHands.send({ image: videoElement });
+                } catch (e) {}
+            }
+            requestAnimationFrame(processVideoFrame);
+        }
+
+        function onHandResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const rawLandmarks = results.multiHandLandmarks[0];
+                bladeState.detected = true;
+
+                // Petakan 21 titik tangan ke ruang skrin cermin
+                bladeState.landmarks = rawLandmarks.map(pt => ({
+                    x: (1 - pt.x) * canvasWidth,
+                    y: pt.y * canvasHeight
+                }));
+
+                // Landmark 8: Hujung Jari Telunjuk (Mata Pedang Cahaya)
+                const indexTip = bladeState.landmarks[8];
+                bladeState.rawX = indexTip.x;
+                bladeState.rawY = indexTip.y;
+            } else {
+                bladeState.detected = false;
+                bladeState.landmarks = null;
+            }
+        }
+
+        // Sokongan Tetikus & Skrin Sentuh sebagai alternatif lancar
+        canvas.addEventListener('pointerdown', (e) => {
+            sfx.init();
+            bladeState.pointerDown = true;
+            bladeState.rawX = e.clientX;
+            bladeState.rawY = e.clientY;
+            bladeState.x = e.clientX;
+            bladeState.y = e.clientY;
+            bladeState.prevX = e.clientX;
+            bladeState.prevY = e.clientY;
+            bladeState.trail = [];
+        });
+
+        canvas.addEventListener('pointermove', (e) => {
+            if (!bladeState.detected) {
+                bladeState.rawX = e.clientX;
+                bladeState.rawY = e.clientY;
+            }
+        });
+
+        window.addEventListener('pointerup', () => {
+            bladeState.pointerDown = false;
+        });
+
+        /**
+         * ============================================================================
+         * 5. LOGIK PERMAINAN, PENGESANAN HIRISAN (LINE-CIRCLE INTERSECTION) & NYAWA
+         * ============================================================================
+         */
+        function shuffleArray(arr) {
+            const copy = [...arr];
+            for (let i = copy.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [copy[i], copy[j]] = [copy[j], copy[i]];
+            }
+            return copy;
+        }
+
+        function startGame() {
+            sfx.init();
+            sfx.playSwordSwipe();
+
+            gameState.mode = 'PLAYING';
+            gameState.score = 0;
+            gameState.lives = 3;
+            gameState.combo = 1;
+            gameState.maxCombo = 1;
+            gameState.timeLeft = 60;
+            gameState.history = [];
+            gameState.targets = [];
+            gameState.slicedHalves = [];
+            gameState.slashLines = [];
+            gameState.particles = [];
+            gameState.floatingTexts = [];
+            gameState.questionPool = buildSessionQuestions();
+            gameState.currentQuestionIndex = 0;
+
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('result-screen').classList.add('hidden');
+            document.getElementById('gameplay-stats').classList.remove('hidden');
+            document.getElementById('question-banner').classList.remove('hidden');
+            document.getElementById('bottom-hint').classList.remove('hidden');
+            document.getElementById('arcade-backdrop').classList.remove('danger-vignette');
+
+            updateHUD(true);
+            loadNextQuestion();
+
+            if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+            gameState.timerInterval = setInterval(() => {
+                if (gameState.mode !== 'PLAYING') return;
+
+                gameState.timeLeft--;
+                updateHUD();
+
+                if (gameState.timeLeft <= 10 && gameState.timeLeft > 0) {
+                    sfx.playTick(gameState.timeLeft <= 5);
+                    document.getElementById('arcade-backdrop').classList.add('danger-vignette');
+                }
+
+                if (gameState.timeLeft <= 0) {
+                    endGame("MASA TAMAT!");
+                }
+            }, 1000);
+        }
+
+        function returnToMenu() {
+            if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+            gameState.mode = 'MENU';
+            gameState.targets = [];
+
+            document.getElementById('result-screen').classList.add('hidden');
+            document.getElementById('gameplay-stats').classList.add('hidden');
+            document.getElementById('question-banner').classList.add('hidden');
+            document.getElementById('bottom-hint').classList.add('hidden');
+            document.getElementById('arcade-backdrop').classList.remove('danger-vignette');
+            document.getElementById('start-screen').classList.remove('hidden');
+        }
+
+        function loadNextQuestion() {
+            if (gameState.currentQuestionIndex >= gameState.questionPool.length) {
+                gameState.questionPool = buildSessionQuestions();
+                gameState.currentQuestionIndex = 0;
+            }
+
+            const qData = gameState.questionPool[gameState.currentQuestionIndex];
+            gameState.currentQuestion = qData;
+            gameState.questionLocked = false;
+
+            const qNum = gameState.history.length + 1;
+            document.getElementById('question-number-badge').textContent = `CABARAN ${qNum}`;
+            document.getElementById('question-category-badge').textContent = qData.category;
+
+            // Format pecahan dalam teks soalan supaya lebih jelas & cantik
+            document.getElementById('question-display').innerHTML = formatMathHTML(qData.prompt);
+
+            spawnFloatingTargets(qData);
+        }
+
+        // Menyerlahkan nilai pecahan/perpuluhan dalam soalan menggunakan lencana visual
+        function formatMathHTML(text) {
+            return text.replace(/(\b\d+\s+\d+\/\d+\b|\b\d+\/\d+\b|\b\d+\.\d+\b)/g, (match) => {
+                return `<span class="inline-block px-3 py-0.5 mx-1 rounded-xl bg-cyan-500/25 border border-cyan-300/60 text-cyan-200 font-arcade text-xl sm:text-3xl shadow-sm">${match}</span>`;
+            });
+        }
+
+        function spawnFloatingTargets(qData) {
+            const shuffledOptions = shuffleArray(qData.options);
+            const styles = shuffleArray(TARGET_STYLES);
+            const count = shuffledOptions.length;
+
+            const topSafe = Math.max(210, canvasHeight * 0.28);
+            const bottomSafe = canvasHeight - 85;
+            const playableHeight = Math.max(220, bottomSafe - topSafe);
+
+            const isMobile = canvasWidth < 640;
+            const baseRadius = isMobile
+                ? Math.min(54, Math.max(44, canvasWidth * 0.13))
+                : Math.min(72, Math.max(58, canvasWidth * 0.062));
+
+            gameState.targets = shuffledOptions.map((opt, idx) => {
+                const laneWidth = (canvasWidth - 60) / count;
+                const startX = 30 + laneWidth * idx + laneWidth / 2;
+                const startY = topSafe + playableHeight * (0.32 + (idx % 2) * 0.36);
+
+                return {
+                    id: `target-${Date.now()}-${idx}`,
+                    label: opt,
+                    isCorrect: opt === qData.answer,
+                    x: startX,
+                    y: startY,
+                    vx: (Math.random() - 0.5) * 1.6,
+                    vy: (Math.random() - 0.5) * 1.3,
+                    radius: baseRadius,
+                    rotation: (Math.random() - 0.5) * 0.4,
+                    rotSpeed: (Math.random() - 0.5) * 0.015,
+                    scale: 0.1,
+                    phase: Math.random() * Math.PI * 2,
+                    style: styles[idx % styles.length],
+                    sliced: false
+                };
+            });
+        }
+
+        /**
+         * Semak perlanggaran segmen garisan libasan pedang (x1,y1)->(x2,y2) dengan bulatan objek (cx,cy,r)
+         */
+        function lineIntersectsCircle(x1, y1, x2, y2, cx, cy, r) {
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) return Math.hypot(cx - x1, cy - y1) <= r;
+
+            let t = ((cx - x1) * dx + (cy - y1) * dy) / lenSq;
+            t = Math.max(0, Math.min(1, t));
+            const closestX = x1 + t * dx;
+            const closestY = y1 + t * dy;
+
+            return Math.hypot(cx - closestX, cy - closestY) <= r;
+        }
+
+        function handleTargetSliced(target, sliceAngle) {
+            if (target.sliced || gameState.questionLocked) return;
+            target.sliced = true;
+
+            // Cipta kesan garisan tebasan cahaya & belahan dua objek
+            createSlicedHalves(target, sliceAngle);
+            spawnExplosion(target.x, target.y, target.style.fill, 32);
+
+            if (target.isCorrect) {
+                // HIRISAN TEPAT!
+                gameState.questionLocked = true;
+                const earned = 100 * gameState.combo;
+                gameState.score += earned;
+
+                sfx.playSliceCorrect(gameState.combo);
+
+                spawnFloatingText(target.x, target.y - 18, `+${earned}!`, '#34d399', 34);
+                if (gameState.combo > 1) {
+                    spawnFloatingText(target.x, target.y + 22, `KOMBO x${gameState.combo}! ⚡`, '#f0abfc', 22);
+                }
+
+                gameState.history.push({
+                    category: gameState.currentQuestion.category,
+                    prompt: gameState.currentQuestion.prompt,
+                    selected: target.label,
+                    correctAnswer: gameState.currentQuestion.answer,
+                    isCorrect: true,
+                    working: gameState.currentQuestion.working
+                });
+
+                gameState.combo++;
+                if (gameState.combo > gameState.maxCombo) {
+                    gameState.maxCombo = gameState.combo;
+                }
+
+                // Pecahkan baki objek lain secara dekoratif
+                gameState.targets.forEach(other => {
+                    if (!other.sliced) {
+                        other.sliced = true;
+                        spawnExplosion(other.x, other.y, other.style.fill, 12);
+                    }
+                });
+
+                updateHUD();
+
+                setTimeout(() => {
+                    if (gameState.mode === 'PLAYING') {
+                        gameState.currentQuestionIndex++;
+                        loadNextQuestion();
+                    }
+                }, 650);
+
+            } else {
+                // HIRISAN SALAH! TOLAK 1 NYAWA
+                sfx.playSliceWrong();
+                gameState.screenShake = 15;
+                gameState.combo = 1;
+                gameState.lives = Math.max(0, gameState.lives - 1);
+
+                spawnFloatingText(target.x, target.y, `SALAH! -1 ❤️`, '#fb7185', 28);
+
+                const alreadyRecorded = gameState.history.some(
+                    h => h.prompt === gameState.currentQuestion.prompt && !h.isCorrect
+                );
+                if (!alreadyRecorded) {
+                    gameState.history.push({
+                        category: gameState.currentQuestion.category,
+                        prompt: gameState.currentQuestion.prompt,
+                        selected: target.label,
+                        correctAnswer: gameState.currentQuestion.answer,
+                        isCorrect: false,
+                        working: gameState.currentQuestion.working
+                    });
+                }
+
+                updateHUD(true);
+
+                // Jika kehabisan 3 nyawa hati, tamatkan permainan serta-merta
+                if (gameState.lives <= 0) {
+                    setTimeout(() => {
+                        if (gameState.mode === 'PLAYING') {
+                            endGame("NYAWA HABIS!");
+                        }
+                    }, 450);
+                }
+            }
+        }
+
+        function updateHUD(animateHeart = false) {
+            document.getElementById('hud-score').textContent = gameState.score;
+            document.getElementById('hud-combo').textContent = `x${gameState.combo}`;
+
+            const comboBadge = document.getElementById('combo-badge');
+            if (gameState.combo >= 3) {
+                comboBadge.classList.add('scale-105', 'border-amber-400');
+            } else {
+                comboBadge.classList.remove('scale-105', 'border-amber-400');
+            }
+
+            // Kemas kini 3 Nyawa Hati
+            const heartsEl = document.getElementById('hud-hearts');
+            let heartsHTML = '';
+            for (let i = 0; i < 3; i++) {
+                if (i < gameState.lives) {
+                    heartsHTML += `<span class="inline-block">❤️</span>`;
+                } else {
+                    heartsHTML += `<span class="inline-block opacity-30 grayscale">🖤</span>`;
+                }
+            }
+            heartsEl.innerHTML = heartsHTML;
+            if (animateHeart) {
+                heartsEl.classList.remove('heart-pop');
+                void heartsEl.offsetWidth;
+                heartsEl.classList.add('heart-pop');
+            }
+
+            // Kemas kini Pemasa
+            const timerEl = document.getElementById('hud-timer');
+            const timerBar = document.getElementById('timer-bar');
+            timerEl.textContent = `${gameState.timeLeft}s`;
+            timerBar.style.width = `${Math.max(0, (gameState.timeLeft / 60) * 100)}%`;
+
+            if (gameState.timeLeft <= 10) {
+                timerEl.className = "font-arcade text-xl sm:text-2xl font-bold leading-none text-rose-400 animate-pulse";
+                timerBar.className = "h-full bg-gradient-to-r from-rose-500 to-red-600 transition-all duration-300";
+            } else {
+                timerEl.className = "font-arcade text-xl sm:text-2xl font-bold leading-none text-cyan-300";
+                timerBar.className = "h-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 transition-all duration-300";
+            }
+        }
+
+        function endGame(reasonTitle = "MISI TAMAT!") {
+            if (gameState.timerInterval) clearInterval(gameState.timerInterval);
+            gameState.mode = 'RESULT';
+            gameState.targets = [];
+            sfx.playGameOver();
+
+            document.getElementById('gameplay-stats').classList.add('hidden');
+            document.getElementById('question-banner').classList.add('hidden');
+            document.getElementById('bottom-hint').classList.add('hidden');
+            document.getElementById('arcade-backdrop').classList.remove('danger-vignette');
+            document.getElementById('result-screen').classList.remove('hidden');
+
+            document.getElementById('end-reason-title').textContent = reasonTitle;
+
+            const totalAttempted = gameState.history.length;
+            const totalCorrect = gameState.history.filter(h => h.isCorrect).length;
+            const accuracy = totalAttempted > 0 ? Math.round((totalCorrect / totalAttempted) * 100) : 0;
+
+            document.getElementById('res-score').textContent = gameState.score;
+            document.getElementById('res-correct').textContent = `${totalCorrect} / ${totalAttempted}`;
+            document.getElementById('res-accuracy').textContent = `${accuracy}%`;
+            document.getElementById('res-max-combo').textContent = `x${gameState.maxCombo}`;
+
+            const rankBadge = document.getElementById('rank-badge');
+            if (gameState.score >= 1200 && accuracy >= 80) {
+                rankBadge.textContent = "👑 PANGKAT: SHOGUN MATEMATIK";
+            } else if (gameState.score >= 700) {
+                rankBadge.textContent = "🥷 PANGKAT: MASTER NINJA PECAHAN";
+            } else if (gameState.score >= 300) {
+                rankBadge.textContent = "⚔️ PANGKAT: SAMURAI NOMBOR";
+            } else {
+                rankBadge.textContent = "🌱 PANGKAT: PERANTIS NINJA";
+            }
+
+            const reviewList = document.getElementById('review-list');
+            reviewList.innerHTML = '';
+
+            if (gameState.history.length === 0) {
+                reviewList.innerHTML = `
+                    <div class="text-center py-6 text-slate-400 font-semibold">
+                        Tiada objek sempat dihiris. Libaskan jari telunjuk dengan pantas melintasi buah/kristal jawapan!
+                    </div>
+                `;
+                return;
+            }
+
+            gameState.history.forEach((item, idx) => {
+                const card = document.createElement('div');
+                const borderStyle = item.isCorrect
+                    ? 'border-emerald-500/40 bg-emerald-950/25'
+                    : 'border-rose-500/40 bg-rose-950/25';
+                const badge = item.isCorrect
+                    ? '<span class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">✓ HIRISAN TEPAT</span>'
+                    : '<span class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-500/20 text-rose-300 border border-rose-400/40">✗ SALAH HIRIS</span>';
+
+                card.className = `rounded-2xl p-3.5 border ${borderStyle} text-left`;
+                card.innerHTML = `
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                        <span class="text-xs font-bold text-slate-400">Cabaran ${idx + 1} • ${item.category}</span>
+                        ${badge}
+                    </div>
+                    <p class="font-bold text-white text-sm sm:text-base mb-2">${item.prompt}</p>
+                    <div class="flex flex-wrap gap-x-5 gap-y-1 text-xs sm:text-sm mb-1.5">
+                        <div>
+                            <span class="text-slate-400">Hirisan Anda:</span>
+                            <span class="font-arcade text-base font-bold ${item.isCorrect ? 'text-emerald-300' : 'text-rose-300'}">${item.selected}</span>
+                        </div>
+                        ${!item.isCorrect ? `
+                        <div>
+                            <span class="text-slate-400">Jawapan Betul:</span>
+                            <span class="font-arcade text-base font-bold text-emerald-300">${item.correctAnswer}</span>
+                        </div>` : ''}
+                    </div>
+                    <p class="text-xs text-cyan-200/95 bg-slate-900/70 rounded-xl px-3 py-1.5 border border-slate-700/60">
+                        📐 <strong>Jalan Kerja:</strong> ${item.working}
+                    </p>
+                `;
+                reviewList.appendChild(card);
+            });
+        }
+
+        /**
+         * ============================================================================
+         * 6. KESAN VISUAL BELAHAN DUA, JEJAK PEDANG CAHAYA & LUKISAN PECAHAN BERTINGKAT
+         * ============================================================================
+         */
+        function createSlicedHalves(target, sliceAngle) {
+            // Garisan kilat tebasan di lokasi belahan
+            gameState.slashLines.push({
+                x: target.x,
+                y: target.y,
+                angle: sliceAngle,
+                length: target.radius * 2.8,
+                alpha: 1.0
+            });
+
+            // Dua separuh objek yang terpisah & jatuh dengan graviti
+            const perpAngle = sliceAngle + Math.PI / 2;
+            [-1, 1].forEach(side => {
+                gameState.slicedHalves.push({
+                    x: target.x + Math.cos(perpAngle) * side * 8,
+                    y: target.y + Math.sin(perpAngle) * side * 8,
+                    vx: Math.cos(perpAngle) * side * 4.5 + (Math.random() - 0.5) * 2,
+                    vy: -3.5 + Math.random() * 1.5,
+                    radius: target.radius,
+                    rotation: sliceAngle,
+                    rotSpeed: side * 0.08,
+                    side: side, // -1 (separuh atas) atau +1 (separuh bawah)
+                    style: target.style,
+                    alpha: 1.0
+                });
+            });
+        }
+
+        function spawnExplosion(x, y, color, count = 28) {
+            for (let i = 0; i < count; i++) {
+                const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.4;
+                const speed = 3 + Math.random() * 8;
+                gameState.particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    size: 4 + Math.random() * 6,
+                    color: i % 3 === 0 ? '#ffffff' : color,
+                    alpha: 1,
+                    decay: 0.022 + Math.random() * 0.02
+                });
+            }
+        }
+
+        function spawnFloatingText(x, y, text, color, size = 28) {
+            gameState.floatingTexts.push({
+                x,
+                y,
+                vy: -2.3,
+                text,
+                color,
+                size,
+                alpha: 1
+            });
+        }
+
+        /**
+         * Melukis bentuk Buah (Tembikai/Oren Neon) atau Kristal Permata
+         */
+        function drawTargetShape(context, radius, style) {
+            if (style.kind === 'crystal') {
+                // Kristal Heksagon Berkilau
+                const sides = 6;
+                context.beginPath();
+                for (let i = 0; i < sides; i++) {
+                    const a = (Math.PI * 2 * i) / sides - Math.PI / 2;
+                    const px = Math.cos(a) * radius;
+                    const py = Math.sin(a) * radius;
+                    if (i === 0) context.moveTo(px, py);
+                    else context.lineTo(px, py);
+                }
+                context.closePath();
+
+                const grad = context.createLinearGradient(-radius, -radius, radius, radius);
+                grad.addColorStop(0, style.light);
+                grad.addColorStop(0.5, style.fill);
+                grad.addColorStop(1, style.dark);
+                context.fillStyle = grad;
+                context.fill();
+
+                context.lineWidth = 3.5;
+                context.strokeStyle = '#ffffff';
+                context.stroke();
+
+                // Faset dalaman kristal
+                context.beginPath();
+                for (let i = 0; i < sides; i++) {
+                    const a = (Math.PI * 2 * i) / sides - Math.PI / 2;
+                    const px = Math.cos(a) * (radius * 0.68);
+                    const py = Math.sin(a) * (radius * 0.68);
+                    if (i === 0) context.moveTo(px, py);
+                    else context.lineTo(px, py);
+                }
+                context.closePath();
+                context.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+                context.lineWidth = 1.5;
+                context.stroke();
+            } else {
+                // Buah Arked Neon dengan Kulit Luar Cerah
+                context.beginPath();
+                context.arc(0, 0, radius, 0, Math.PI * 2);
+                context.fillStyle = style.light;
+                context.fill();
+
+                context.beginPath();
+                context.arc(0, 0, radius * 0.86, 0, Math.PI * 2);
+                const grad = context.createRadialGradient(-radius * 0.25, -radius * 0.25, 5, 0, 0, radius * 0.86);
+                grad.addColorStop(0, style.light);
+                grad.addColorStop(0.5, style.fill);
+                grad.addColorStop(1, style.dark);
+                context.fillStyle = grad;
+                context.fill();
+
+                context.lineWidth = 3;
+                context.strokeStyle = '#ffffff';
+                context.stroke();
+            }
+        }
+
+        /**
+         * Memaparkan label pecahan (pengangka/penyebut bertingkat atau nombor bercampur) dengan jelas
+         */
+        function drawMathLabel(context, label, radius) {
+            context.fillStyle = '#ffffff';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.shadowColor = 'rgba(0, 0, 0, 0.85)';
+            context.shadowBlur = 8;
+
+            // Semak jika nombor bercampur (contoh: "1 3/4") atau pecahan biasa ("4/8")
+            if (label.includes('/')) {
+                const parts = label.split(' ');
+                if (parts.length === 2) {
+                    // Nombor Bercampur: Nombor bulat di kiri, pecahan bertingkat di kanan
+                    const whole = parts[0];
+                    const [num, den] = parts[1].split('/');
+                    const wholeSize = Math.round(radius * 0.52);
+                    const fracSize = Math.round(radius * 0.36);
+
+                    context.font = `700 ${wholeSize}px 'Fredoka', sans-serif`;
+                    context.fillText(whole, -radius * 0.24, 2);
+
+                    context.font = `700 ${fracSize}px 'Fredoka', sans-serif`;
+                    context.fillText(num, radius * 0.22, -fracSize * 0.62);
+
+                    // Garis pecahan
+                    context.strokeStyle = '#ffffff';
+                    context.lineWidth = 3;
+                    context.beginPath();
+                    context.moveTo(radius * 0.02, 0);
+                    context.lineTo(radius * 0.44, 0);
+                    context.stroke();
+
+                    context.fillText(den, radius * 0.22, fracSize * 0.68);
+                } else {
+                    // Pecahan biasa (Pengangka di atas, garis, Penyebut di bawah)
+                    const [num, den] = label.split('/');
+                    const fracSize = Math.round(radius * 0.44);
+
+                    context.font = `700 ${fracSize}px 'Fredoka', sans-serif`;
+                    context.fillText(num, 0, -fracSize * 0.62);
+
+                    context.strokeStyle = '#ffffff';
+                    context.lineWidth = 3.5;
+                    context.beginPath();
+                    context.moveTo(-radius * 0.34, 0);
+                    context.lineTo(radius * 0.34, 0);
+                    context.stroke();
+
+                    context.fillText(den, 0, fracSize * 0.68);
+                }
+            } else {
+                // Nombor perpuluhan (contoh: "0.25")
+                const fontSize = Math.round(radius * 0.48);
+                context.font = `700 ${fontSize}px 'Fredoka', sans-serif`;
+                context.fillText(label, 0, 2);
+            }
+        }
+
+        function updateBladeAndSlash(timestamp) {
+            // Simpan kedudukan sebelumnya untuk kira vektor kelajuan libasan
+            bladeState.prevX = bladeState.x;
+            bladeState.prevY = bladeState.y;
+
+            // Interpolasi pantas supaya bilah responsif terhadap gerakan laju
+            bladeState.x += (bladeState.rawX - bladeState.x) * 0.55;
+            bladeState.y += (bladeState.rawY - bladeState.y) * 0.55;
+
+            const dx = bladeState.x - bladeState.prevX;
+            const dy = bladeState.y - bladeState.prevY;
+            bladeState.speed = Math.hypot(dx, dy);
+
+            const activeInput = bladeState.detected || bladeState.pointerDown;
+            bladeState.isSlashing = activeInput && bladeState.speed >= SLASH_SPEED_THRESHOLD;
+
+            // Kemas kini status HUD bilah pedang
+            const statusText = document.getElementById('blade-status-text');
+            const statusDot = document.getElementById('blade-dot');
+            if (statusText && statusDot) {
+                if (bladeState.isSlashing) {
+                    statusText.textContent = "LIBASAN AKTIF! ⚔️";
+                    statusText.className = "font-arcade text-sm font-bold text-fuchsia-300";
+                    statusDot.className = "w-3 h-3 rounded-full bg-fuchsia-400 animate-ping";
+                } else if (bladeState.detected) {
+                    statusText.textContent = "Jari Dikesan (Libas Laju)";
+                    statusText.className = "font-arcade text-sm font-semibold text-emerald-300";
+                    statusDot.className = "w-3 h-3 rounded-full bg-emerald-400";
+                } else {
+                    statusText.textContent = "Sedia Melibas";
+                    statusText.className = "font-arcade text-sm font-semibold text-cyan-300";
+                    statusDot.className = "w-3 h-3 rounded-full bg-cyan-400";
+                }
+            }
+
+            // Rekod jejak cahaya pedang apabila jari bergerak
+            if (activeInput && bladeState.speed > 2.5) {
+                bladeState.trail.push({
+                    x: bladeState.x,
+                    y: bladeState.y,
+                    speed: bladeState.speed,
+                    time: timestamp
+                });
+            }
+
+            // Buang titik jejak lama (> 180ms) supaya ekor pedang tirus dan lancar
+            while (bladeState.trail.length > 0 && timestamp - bladeState.trail[0].time > 180) {
+                bladeState.trail.shift();
+            }
+
+            // Mainkan bunyi libasan angin apabila gerakan laju
+            if (bladeState.isSlashing && bladeState.speed > 24) {
+                sfx.playSwordSwipe();
+            }
+
+            // Semak perlanggaran hirisan dengan objek terapung semasa bermain
+            if (gameState.mode === 'PLAYING' && !gameState.questionLocked && bladeState.isSlashing) {
+                const sliceAngle = Math.atan2(dy, dx);
+                for (const target of gameState.targets) {
+                    if (target.sliced) continue;
+                    if (lineIntersectsCircle(
+                        bladeState.prevX, bladeState.prevY,
+                        bladeState.x, bladeState.y,
+                        target.x, target.y, target.radius * 1.08
+                    )) {
+                        handleTargetSliced(target, sliceAngle);
+                        break;
+                    }
+                }
+            }
+        }
+
+        function drawHandSkeletonAndSwordTrail() {
+            // 1. Lukis rangka tangan halus jika dikesan oleh MediaPipe
+            if (bladeState.detected && bladeState.landmarks) {
+                const pts = bladeState.landmarks;
+                const connections = [
+                    [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+                    [5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],
+                    [13,17],[17,18],[18,19],[19,20],[0,17]
+                ];
+
+                ctx.save();
+                ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+                ctx.lineWidth = 2;
+                connections.forEach(([i, j]) => {
+                    ctx.beginPath();
+                    ctx.moveTo(pts[i].x, pts[i].y);
+                    ctx.lineTo(pts[j].x, pts[j].y);
+                    ctx.stroke();
+                });
+
+                // Serlahkan sendi jari telunjuk (5, 6, 7, 8) sebagai pemegang pedang cahaya
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 4;
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.moveTo(pts[5].x, pts[5].y);
+                ctx.lineTo(pts[6].x, pts[6].y);
+                ctx.lineTo(pts[7].x, pts[7].y);
+                ctx.lineTo(pts[8].x, pts[8].y);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // 2. Lukis Jejak Pedang Cahaya (Light Blade Trail)
+            const trail = bladeState.trail;
+            if (trail.length >= 2) {
+                ctx.save();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                for (let i = 1; i < trail.length; i++) {
+                    const progress = i / trail.length; // 0 (ekor) hingga 1 (hujung pedang)
+                    const p1 = trail[i - 1];
+                    const p2 = trail[i];
+                    const isFast = p2.speed >= SLASH_SPEED_THRESHOLD;
+
+                    // Aura luar bercahaya (Sian/Magenta)
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.strokeStyle = isFast ? '#e879f9' : '#22d3ee';
+                    ctx.shadowColor = isFast ? '#d946ef' : '#06b6d4';
+                    ctx.shadowBlur = isFast ? 24 : 14;
+                    ctx.globalAlpha = progress * 0.85;
+                    ctx.lineWidth = progress * (isFast ? 22 : 13);
+                    ctx.stroke();
+
+                    // Teras putih tajam di tengah bilah pedang
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.shadowBlur = 6;
+                    ctx.globalAlpha = progress;
+                    ctx.lineWidth = progress * (isFast ? 8 : 4);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            // 3. Lukis Mata Bintang Cahaya pada Hujung Jari Telunjuk
+            if (bladeState.detected || bladeState.pointerDown) {
+                ctx.save();
+                ctx.translate(bladeState.x, bladeState.y);
+                const glowRadius = bladeState.isSlashing ? 16 : 10;
+                ctx.shadowColor = bladeState.isSlashing ? '#f0abfc' : '#38bdf8';
+                ctx.shadowBlur = 20;
+
+                ctx.beginPath();
+                ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+                ctx.fillStyle = bladeState.isSlashing ? 'rgba(240, 171, 252, 0.55)' : 'rgba(56, 189, 248, 0.45)';
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function updateAndDrawTargets(timestamp) {
+            if (gameState.mode !== 'PLAYING') return;
+
+            const topSafe = Math.max(210, canvasHeight * 0.28);
+            const bottomSafe = canvasHeight - 85;
+
+            for (const t of gameState.targets) {
+                if (t.sliced) continue;
+
+                if (t.scale < 1) {
+                    t.scale = Math.min(1, t.scale + 0.08);
+                }
+
+                // Pergerakan terapung & putaran lembut
+                t.x += t.vx + Math.sin(timestamp * 0.0022 + t.phase) * 0.65;
+                t.y += t.vy + Math.cos(timestamp * 0.0026 + t.phase) * 0.65;
+                t.rotation += t.rotSpeed;
+
+                const marginX = t.radius + 18;
+                if (t.x < marginX) { t.x = marginX; t.vx = Math.abs(t.vx); }
+                if (t.x > canvasWidth - marginX) { t.x = canvasWidth - marginX; t.vx = -Math.abs(t.vx); }
+                if (t.y < topSafe + t.radius) { t.y = topSafe + t.radius; t.vy = Math.abs(t.vy); }
+                if (t.y > bottomSafe - t.radius) { t.y = bottomSafe - t.radius; t.vy = -Math.abs(t.vy); }
+
+                ctx.save();
+                ctx.translate(t.x, t.y);
+                ctx.scale(t.scale, t.scale);
+
+                // Putar bentuk luar sahaja supaya nombor pecahan kekal tegak & mudah dibaca murid
+                ctx.save();
+                ctx.rotate(t.rotation);
+                ctx.shadowColor = t.style.glow;
+                ctx.shadowBlur = 22;
+                drawTargetShape(ctx, t.radius, t.style);
+                ctx.restore();
+
+                // Lukis nilai pecahan / perpuluhan tegak di tengah
+                drawMathLabel(ctx, t.label, t.radius);
+
+                ctx.restore();
+            }
+        }
+
+        function updateAndDrawSlicedEffects() {
+            // 1. Garisan Kilat Tebasan (Slash Flash)
+            for (let i = gameState.slashLines.length - 1; i >= 0; i--) {
+                const sl = gameState.slashLines[i];
+                sl.alpha -= 0.06;
+                if (sl.alpha <= 0) {
+                    gameState.slashLines.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.translate(sl.x, sl.y);
+                ctx.rotate(sl.angle);
+                ctx.globalAlpha = sl.alpha;
+                ctx.strokeStyle = '#ffffff';
+                ctx.shadowColor = '#f0abfc';
+                ctx.shadowBlur = 20;
+                ctx.lineWidth = 6 * sl.alpha;
+                ctx.beginPath();
+                ctx.moveTo(-sl.length / 2, 0);
+                ctx.lineTo(sl.length / 2, 0);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // 2. Separuh Objek Terbelah Dua (Sliced Halves)
+            for (let i = gameState.slicedHalves.length - 1; i >= 0; i--) {
+                const h = gameState.slicedHalves[i];
+                h.x += h.vx;
+                h.y += h.vy;
+                h.vy += 0.35; // Graviti jatuh
+                h.rotation += h.rotSpeed;
+                h.alpha -= 0.024;
+
+                if (h.alpha <= 0 || h.y > canvasHeight + 120) {
+                    gameState.slicedHalves.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.translate(h.x, h.y);
+                ctx.rotate(h.rotation);
+                ctx.globalAlpha = h.alpha;
+
+                // Potong kanvas (clip) kepada separuh atas atau separuh bawah
+                ctx.beginPath();
+                if (h.side === -1) {
+                    ctx.rect(-h.radius * 1.5, -h.radius * 1.5, h.radius * 3, h.radius * 1.5);
+                } else {
+                    ctx.rect(-h.radius * 1.5, 0, h.radius * 3, h.radius * 1.5);
+                }
+                ctx.clip();
+
+                drawTargetShape(ctx, h.radius, h.style);
+                ctx.restore();
+            }
+
+            // 3. Zarah Percikan Cahaya
+            for (let i = gameState.particles.length - 1; i >= 0; i--) {
+                const p = gameState.particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.2;
+                p.vx *= 0.96;
+                p.alpha -= p.decay;
+
+                if (p.alpha <= 0) {
+                    gameState.particles.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 4. Teks Skor / Maklum Balas Terapung
+            for (let i = gameState.floatingTexts.length - 1; i >= 0; i--) {
+                const ft = gameState.floatingTexts[i];
+                ft.y += ft.vy;
+                ft.alpha -= 0.022;
+
+                if (ft.alpha <= 0) {
+                    gameState.floatingTexts.splice(i, 1);
+                    continue;
+                }
+
+                ctx.save();
+                ctx.globalAlpha = ft.alpha;
+                ctx.font = `700 ${ft.size}px 'Fredoka', sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.shadowColor = 'rgba(0,0,0,0.85)';
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = ft.color;
+                ctx.fillText(ft.text, ft.x, ft.y);
+                ctx.restore();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 7. GELUNG ANIMASI UTAMA (60 FPS)
+         * ============================================================================
+         */
+        function gameLoop(timestamp) {
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+            ctx.save();
+            if (gameState.screenShake > 0) {
+                ctx.translate(
+                    (Math.random() - 0.5) * gameState.screenShake,
+                    (Math.random() - 0.5) * gameState.screenShake
+                );
+                gameState.screenShake *= 0.85;
+                if (gameState.screenShake < 0.5) gameState.screenShake = 0;
+            }
+
+            // Kemas kini posisi bilah pedang jari & semak hirisan
+            updateBladeAndSlash(timestamp);
+
+            // Lukis buah/kristal pecahan aktif
+            updateAndDrawTargets(timestamp);
+
+            // Lukis belahan dua, zarah percikan & teks terapung
+            updateAndDrawSlicedEffects();
+
+            // Lukis rangka tangan & jejak bilah pedang cahaya di lapisan paling atas
+            drawHandSkeletonAndSwordTrail();
+
+            ctx.restore();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.onload = function () {
+            initMediaPipeHands();
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
